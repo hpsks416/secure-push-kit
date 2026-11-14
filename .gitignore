@@ -1,0 +1,29 @@
+# ---- local credentials / machine paths (never commit) ----
+links.json
+secrets.cmd
+config.json
+state.json
+state.json.tmp
+*.bak
+*.bak-*
+*.backup.enc
+*.zip
+age-identity*
+*.token
+*.pem
+*.key
+.env
+.env.*
+credentials.json
+.netrc
+
+# ---- python ----
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ---- os junk ----
+.DS_Store
+Thumbs.db
+desktop.ini

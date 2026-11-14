@@ -1,0 +1,17 @@
+{
+  "git_path": "",
+  "host": "127.0.0.1",
+  "port": 8790,
+  "state_file": "state.json",
+  "github_remote": "origin",
+  "gitee_remote": "gitee",
+  "atomgit_remote": "atomgit",
+  "github_user": "hpsks416",
+  "gitee_user": "",
+  "gitee_token": "",
+  "atomgit_user": "",
+  "atomgit_token": "",
+  "atomgit_host": "atomgit.com",
+  "push_targets": ["github", "gitee", "atomgit"],
+  "use_openssl": true
+}
