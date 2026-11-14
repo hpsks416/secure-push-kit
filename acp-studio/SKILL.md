@@ -65,6 +65,8 @@ quirks worth handling in the push command:
 
 - Proxy: GitHub needs `-c http.proxy=http://127.0.0.1:7897` (real proxy, registry `ProxyEnable=1`); Gitee connects directly. A legacy `127.0.0.1:9` proxy note is stale — ignore it.
 - Use `-c http.sslBackend=openssl`; the default schannel backend can fail with `SEC_E_NO_CREDENTIALS`.
+- **push 一律走 `scripts/push-secure.cmd`**（内部 `call secrets.cmd` → 环境变量 → inline auth），agent 不直接 `Get-Content G:\KEY\*.txt` 读 token 明文；token 只进脚本进程环境变量、不进 agent 上下文。用法：`push-secure.cmd <Repo路径> <RepoName> github|gitee|atomgit [Branch]`（`SECRETS_CMD` 可覆盖 secrets.cmd 路径，`GIT_HTTP_PROXY` 只对 GitHub 生效）。
+- **受限/沙箱环境起不了 POSIX shell 时**（典型报错 `sh.exe: fatal error - couldn't create signal pipe, Win32 error 5` → `could not read Username`），`credential.helper=!shell` 必失败 → 改用 `scripts/push_all.py`（`http.extraheader=Authorization: Basic <base64>`，无子 shell、无交互提示、输出脱敏）：`python push_all.py <repo路径> <repo名> --targets github,gitee,atomgit --atomgit-user <AtomGit用户> --proxy http://127.0.0.1:7897`。
 - Prefer inline auth `https://<github_user>:<GITHUB_TOKEN>@github.com/<owner>/<repo>.git`, plus
   `-c credential.helper=` so git never opens an interactive prompt.
 - Never write the token into repo config; read it from `secrets.cmd` / `GITHUB_TOKEN` and redact it from output.
@@ -80,6 +82,17 @@ quirks worth handling in the push command:
 - It is a batch config file, not a double-clickable app; double-clicking flashes and exits. Edit it in a text editor.
 - The panel reads `GITHUB_TOKEN` from the environment; its `start.cmd` sources `secrets.cmd`, so run the panel via
   `start.cmd` (or export the variable) to make newly added tokens take effect.
+
+## secrets-link（token 连接面板）
+
+把 `secrets.cmd` 里的 token 明文改成「引用 G:\KEY 文件内容」：换 token 只改文件内容，不再手改 secrets.cmd。
+
+- token 存在 `G:\KEY\GITHUB token\*.txt` / `G:\KEY\GITEE token\*.txt` / `G:\KEY\commandcode\*.txt` / `G:\KEY\deepseek\*.txt` 的**文件内容**里（不依赖文件名）。支持 push token（`GITHUB_TOKEN`/`GITEE_TOKEN`）与 LLM key（`COMMANDCODE_API_KEY`/`DEEPSEEK_API_KEY`）——机制通用，`links.json` 的 `tokens` 数组加一项即可挂任意变量。
+- `secrets.cmd` 只引用路径（batch `for /f` 运行时读内容），不含明文。
+- 可视化面板（零依赖 Node，`scripts/secrets-link/secrets-link-web.mjs`，端口 7782）：显示「变量 → 文件路径 → token 预览（脱敏）」，支持手动改路径（初次部署/迁移用）。**多 AGENT 工作区**：`links.json` 顶层是 `workspaces[]`，每个工作区独立的 `target` + `tokens` + `extra`，面板下拉切换（DSH / Codex / Claude / 各机器各一套 secrets.cmd）。
+- 首次使用：复制 `scripts/secrets-link/links.json.example` → `links.json`，填入真实 token 文件路径。`links.json` 含真实路径，需 gitignore，不入库。
+- **age 公私钥加密存储（可选）**：`age-keygen -o key.txt` 生成密钥对 → `age -e -r <公钥> -o token.age token` 加密 → 工作区 `age.identity` 指到私钥 `key.txt`。面板检测 `age-encryption.org/v1` 魔数自动 `age -d` 解密预览；`secrets.cmd` 的 `for /f` 也改成运行时 `age -d -i <identity>` 解密。G:\KEY 存密文，只有私钥能解。
+- **面板一键封装（选择封装对象，产物是 .zip）**：勾选 token →「🔒 封装选中」→ 自动封装。产物：`<file>.zip`（内含 age 密文，**zip 密码 = 公钥，属「防误提交封装」非加密**——公钥公开、无保密性，只防手滑推仓库）+ `<file>.backup.enc`（AES-256-GCM 备份，密码 = 私钥，真加密）。**面板只认 .zip**：非 .zip 拒绝生成 secrets.cmd（防未封装就生成）。运行时 `decrypt-runtime.py <file>.zip <age_bin> <identity>` 解 zip（公钥）→ age 解密（私钥）→ 明文。
 
 ## AtomGit (third push target)
 
@@ -129,10 +142,12 @@ When creating or initializing a repository without a specified license, default 
 - Never force-push (`--force`, `-f`) unless the user explicitly asked.
 - Never commit secrets, `.env`, credentials, or large binaries; report them instead.
 - Credentials come from `GITEE_USERNAME`/`GITEE_TOKEN` and `GITHUB_TOKEN` (or `gh auth token`); never write them into repo config, and redact them from output.
-- New Gitee repositories default to public + MIT; after creating, verify visibility and PATCH `private=false` if Gitee returned private.
+- **Gitee create-repo API 的 `public` 字段不接受布尔值** — 显式传 `public: true` 会返回 HTTP 400 `"public" is invalid`；正确做法是**省略 `public` 字段**创建（返回 201）。**但 Gitee 默认建库是 private（不是 public）**，建完要转公开：`PATCH /api/v5/repos/{owner}/{repo}` body 带 `name=<repo>&private=false`（**必须带 name 参数，否则报 "name is missing"**）。**空仓库不能直接转公开**：对还没有 commit 的仓库 PATCH 会返回 `422 空仓库不支持设置为公开仓库` → 先推首个 commit，再 PATCH（建 `secure-push-kit` 实测顺序）。
+- **Deleting a GitHub repo needs `delete_repo` scope** — a classic PAT with only `repo` scope returns `403 Must have admin rights` on `DELETE /repos/{owner}/{repo}`. Delete requires a PAT with `delete_repo` (plus `repo` for push). Gitee delete (`DELETE /repos/{owner}/{repo}`) works with the normal token. Deleting is irreversible — confirm the exact repo before running.
 - The sync script is fast-forward only and never force-pushes; diverged branches are reported and skipped.
 - Sync is one-way by default (`github-to-gitee`); choose `gitee-to-github` for the reverse direction, or `both` to run the two one-way directions in one pass.
 
 ## References
 
 - `scripts/sync_github_gitee.py`: the bundled bidirectional sync script.
+- `references/secrets-link-guide.md`: secrets-link 加密存储完整指南（配置 / 三层加密 / 恢复 / 多工作区 / 安全模型）。
