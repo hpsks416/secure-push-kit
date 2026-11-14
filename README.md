@@ -46,6 +46,7 @@ secure-push-kit/
 │   ├── config.example.json
 │   ├── secrets.cmd.example
 │   ├── scripts/push-secure.cmd 三平台安全推送（github | gitee | atomgit）
+│   ├── scripts/push_all.py     三平台推送（Python，无需 shell helper，沙箱环境可用）
 │   ├── scripts/sync_github_gitee.py
 │   └── references/secrets-link-guide.md
 └── skills/                     四个可被 Agent 直接调用的 skill
@@ -95,6 +96,15 @@ cd acp-studio
 python server.py            # http://127.0.0.1:8790
 ```
 
+也可以直接用 Python 一次推三个平台（不依赖 `sh` 子进程，受限/沙箱环境更稳）：
+
+```bash
+python acp-studio/scripts/push_all.py <repo路径> repo-name \
+    --targets github,gitee,atomgit --atomgit-user <你的AtomGit用户名> --proxy http://127.0.0.1:7897
+```
+
+> 为什么有两套：`push-secure.cmd` 走 git 的 `credential.helper=!f(){...}`（不把 token 放进 argv，但需要能起 POSIX shell）；`push_all.py` 走 `http.extraheader=Authorization: Basic ...`（不需要 shell，token 只经环境变量传入并在输出里脱敏）。按环境选一个即可。
+
 面板 JSON API：
 
 ```http
@@ -135,7 +145,7 @@ python skills/secret-scan/scripts/scan_secrets.py --local <打包产物目录>
 - `skills/` 四个 skill 来自 `agent-deploy/skills/`。
 - `acp-studio/` 面板来自原 `acp-studio` 仓库（该仓库已标注废弃、内容并入 `agent-deploy`）。
 
-如果发现 bug，优先在对应上游修，再同步回本仓库；本仓库的 `push-secure.cmd` 已扩展为支持 `atomgit` 目标与 `SECRETS_CMD` 覆盖。
+如果发现 bug，优先在对应上游修，再同步回本仓库；本仓库新增了 `push_all.py`（三平台、无 shell helper），并把 `push-secure.cmd` 扩展为支持 `atomgit` 目标与 `SECRETS_CMD` 覆盖。
 
 ## 免责声明
 

@@ -5,7 +5,8 @@ description: Unified local panel for GitHub commit, Gitee commit, AtomGit mirror
 
 > **本仓库（secure-push-kit）的路径映射**：面板源码就在本仓库 `acp-studio/`（即上文的 "Studio directory"）；
 > secrets-link 面板与脚本在仓库根 `secrets-link/`，因此下文出现的 `scripts/secrets-link/...`
-> 在本仓库请读作 `../secrets-link/...`。`scripts/push-secure.cmd` 已扩展为支持 `atomgit` 目标。
+> 在本仓库请读作 `../secrets-link/...`。`scripts/push-secure.cmd` 已扩展为支持 `atomgit` 目标；
+> `scripts/push_all.py` 提供不依赖 shell helper 的三平台推送（受限环境更稳）。
 
 # ACP Studio (GitHub · Gitee · AtomGit · 双向同步)
 
